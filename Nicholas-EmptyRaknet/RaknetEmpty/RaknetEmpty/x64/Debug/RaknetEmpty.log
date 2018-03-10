@@ -1,9 +1,2 @@
 ﻿  main.cpp
-c:\users\pendr\documents\github\raknet-nickpository\nicholas-emptyraknet\raknetempty\raknetempty\main.cpp(115): warning C4477: 'printf' : format string '%I64u' requires an argument of type 'unsigned __int64', but variadic argument 1 has type 'RakNet::RakNetGUID'
-main.obj : error LNK2019: unresolved external symbol "public: __cdecl RakNet::SocketDescriptor::SocketDescriptor(void)" (??0SocketDescriptor@RakNet@@QEAA@XZ) referenced in function main
-main.obj : error LNK2019: unresolved external symbol "public: __cdecl RakNet::SocketDescriptor::SocketDescriptor(unsigned short,char const *)" (??0SocketDescriptor@RakNet@@QEAA@GPEBD@Z) referenced in function main
-main.obj : error LNK2019: unresolved external symbol "public: __cdecl RakNet::SystemAddress::SystemAddress(void)" (??0SystemAddress@RakNet@@QEAA@XZ) referenced in function "void __cdecl RakNet::`dynamic initializer for 'UNASSIGNED_SYSTEM_ADDRESS''(void)" (??__EUNASSIGNED_SYSTEM_ADDRESS@RakNet@@YAXXZ)
-main.obj : error LNK2019: unresolved external symbol "public: char const * __cdecl RakNet::SystemAddress::ToString(bool,char)const " (?ToString@SystemAddress@RakNet@@QEBAPEBD_ND@Z) referenced in function "void __cdecl PacketHandler(void)" (?PacketHandler@@YAXXZ)
-main.obj : error LNK2019: unresolved external symbol "public: char const * __cdecl RakNet::RakNetGUID::ToString(void)const " (?ToString@RakNetGUID@RakNet@@QEBAPEBDXZ) referenced in function "void __cdecl PacketHandler(void)" (?PacketHandler@@YAXXZ)
-main.obj : error LNK2019: unresolved external symbol "public: static class RakNet::RakPeerInterface * __cdecl RakNet::RakPeerInterface::GetInstance(void)" (?GetInstance@RakPeerInterface@RakNet@@SAPEAV12@XZ) referenced in function main
-C:\Users\Pendr\Documents\GitHub\RakNet-Nickpository\Nicholas-EmptyRaknet\RaknetEmpty\x64\Debug\RaknetEmpty.exe : fatal error LNK1120: 6 unresolved externals
+c:\users\tech\desktop\raknet-master-master\firas-emptyraknet\raknetempty\raknetempty\main.cpp(2): fatal error C1083: Cannot open include file: 'MessageIdentifiers.h': No such file or directory
