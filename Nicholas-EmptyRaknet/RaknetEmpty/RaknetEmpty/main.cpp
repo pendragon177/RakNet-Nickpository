@@ -6,6 +6,7 @@
 #include <chrono>
 #include <map>
 #include <mutex>
+#include <string>
 
 static unsigned int SERVER_PORT = 65000;
 static unsigned int CLIENT_PORT = 65001;
@@ -19,12 +20,16 @@ enum NetworkState
 	NS_Lobby,
 	NS_Pending,
 	NS_PickClass,
+	NS_GameplayIntro,
+	NS_Gameplay,
 };
 
 bool isServer = false;
 bool isRunning = true;
 
 int playersReady = 0;
+int whosTurn = 0;
+int statPart = 0;
 
 RakNet::RakPeerInterface *g_rakPeerInterface = nullptr;
 RakNet::SystemAddress g_serverAddress;
@@ -37,7 +42,10 @@ enum {
 	ID_PLAYER_READY,
 	ID_PICK_CLASS,
 	ID_ASSIGN_CLASS,
-	ID_THEGAME_START,
+	ID_CLASS_PICKED,
+	ID_GAME_START,
+	ID_SERVERGET_STATS,
+	ID_CLIENT_READ_STATS,
 };
 
 enum ePlayerClass
@@ -51,11 +59,14 @@ enum ePlayerClass
 struct SPlayer
 {
 	std::string name;
+	std::string classString;
 	RakNet::SystemAddress address;
 	unsigned int m_health;
 	unsigned int m_attack;
 	unsigned int m_heal;
 	ePlayerClass m_class;
+
+	unsigned int turnPosition;
 };
 
 std::map<unsigned long, SPlayer> m_players;
@@ -202,6 +213,7 @@ void OnClassSelect(RakNet::Packet* packet)
 		player.m_health = 6;
 		player.m_attack = 2;
 		player.m_heal = 4;
+		player.classString = "mage";
 	}
 	else if (strcmp(classChoice, "ranger") == 0)
 	{
@@ -209,6 +221,7 @@ void OnClassSelect(RakNet::Packet* packet)
 		player.m_health = 9;
 		player.m_attack = 3;
 		player.m_heal = 3;
+		player.classString = "ranger";
 		std::cout << player.name.c_str() << " is a ranger." << std::endl;
 	}
 	else if (strcmp(classChoice, "warrior") == 0)
@@ -218,6 +231,7 @@ void OnClassSelect(RakNet::Packet* packet)
 		player.m_attack = 1;
 		player.m_heal = 2;
 		std::cout << player.name.c_str() << " is a warrior." << std::endl;
+		player.classString = "warrior";
 	}
 	else if (strcmp(classChoice, "hacker") == 0)
 	{
@@ -225,11 +239,123 @@ void OnClassSelect(RakNet::Packet* packet)
 		player.m_health = 999;
 		player.m_attack = 999;
 		player.m_heal = 999;
-		std::cout << player.name.c_str() << " is a warrior." << std::endl;
+		std::cout << player.name.c_str() << " is a cheating cheater who cheats." << std::endl;
+		player.classString = "hacker";
 	}
-	
+
+	whosTurn++;
+	player.turnPosition = whosTurn;
+
+	RakNet::BitStream writeBs;
+	writeBs.Write((RakNet::MessageID)ID_CLASS_PICKED);
+	RakNet::RakString name(player.name.c_str());
+	writeBs.Write(name);
+	assert(g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true));
+
+	playersReady += 1;
+	if (playersReady == 2)//testing #2
+	{
+		NetworkState ns = NS_GameplayIntro;
+		RakNet::BitStream bs;
+		bs.Write((RakNet::MessageID)ID_GAME_START);
+		bs.Write(ns);
+		std::cout << "All players chose a class." << std::endl;
+		g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, g_serverAddress, true);
+		playersReady = 0;
+	}
+
 	//std::cout << userName.C_String() << " aka " << player.name.c_str() << " IS READY!!!!!" << std::endl;
 }
+
+//displays on CLIENT
+void DisplayClassesPicked(RakNet::Packet*packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString userName;
+	bs.Read(userName);
+
+	std::cout << userName.C_String() << " has picked their class." << std::endl;
+}
+
+//changing CLIENT state
+void TimeToPlay(RakNet::Packet* packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	NetworkState ns;
+	bs.Read(ns);
+
+	g_networkState = ns;
+}
+
+//serverside right now
+void DisplayStats(RakNet::Packet* packet)
+{
+	unsigned long guid = RakNet::RakNetGUID::ToUint32(packet->guid);
+	std::map<unsigned long, SPlayer>::iterator it = m_players.find(guid);
+
+	for (std::map<unsigned long, SPlayer>::iterator it = m_players.begin(); it != m_players.end(); ++it)
+	{
+		/*if (guid == it->first)
+		{
+			continue;
+		}*/
+		SPlayer& player = it->second;
+		//player.name = userName;
+
+		std::cout << "Player Name: "<< player.name.c_str() << std::endl;
+		std::cout << "Player Class: " << player.classString.c_str() << std::endl;
+		std::cout << "Current Health: " << player.m_health << std::endl;
+		std::string hp = std::to_string(player.m_health);
+
+		RakNet::BitStream writeBs;
+		writeBs.Write((RakNet::MessageID)ID_CLIENT_READ_STATS);
+		RakNet::RakString playerStats(player.name.c_str());
+		writeBs.Write(playerStats);
+		g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+
+		RakNet::BitStream writeBs2;
+		writeBs2.Write((RakNet::MessageID)ID_CLIENT_READ_STATS);
+		RakNet::RakString playerStats2(player.classString.c_str());
+		writeBs2.Write(playerStats2);
+		g_rakPeerInterface->Send(&writeBs2, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+
+		RakNet::BitStream writeBs3;
+		writeBs3.Write((RakNet::MessageID)ID_CLIENT_READ_STATS);
+		RakNet::RakString playerStats3(hp.c_str());
+		writeBs3.Write(playerStats3);
+		g_rakPeerInterface->Send(&writeBs3, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+	}
+}
+
+//clientside
+void ClientReadStats(RakNet::Packet* packet)
+{
+	statPart++;
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString stat;
+	bs.Read(stat);
+	if (statPart == 1) 
+	{
+		std::cout << "Player Name: " << stat.C_String() <<  std::endl;
+	}
+	else if (statPart == 2)
+	{
+		std::cout << "Player Class: " << stat.C_String() << std::endl;
+	}
+	else if (statPart == 3)
+	{
+		std::cout << "Player Health: " << stat.C_String() << std::endl;
+		statPart = 0;
+	}
+	
+}
+
 
 unsigned char GetPacketIdentifier(RakNet::Packet *packet)
 {
@@ -289,27 +415,53 @@ void InputHandler()
 		}
 		else if (g_networkState == NS_PickClass)
 		{
-			//unsigned long guid = RakNet::RakNetGUID::ToUint32(packet->guid);
-			//std::map<unsigned long, SPlayer>::iterator it = m_players.find(guid);
-			//SPlayer& player.;
-			std::cout << "Enter 'mage', 'ranger' or 'warrior' to pick your class." << std::endl;
-			std::cin >> userInput;
+			static bool doOnce = false;
+			if (!doOnce)
+			{
+				std::cout << "Enter 'mage', 'ranger' or 'warrior' to pick your class." << std::endl;
+				std::cin >> userInput;
 
-			if (strcmp(userInput, "warrior") == 0 || strcmp(userInput, "ranger") == 0 || strcmp(userInput, "mage") == 0 || strcmp(userInput, "hacker") == 0)
+				if (strcmp(userInput, "warrior") == 0 || strcmp(userInput, "ranger") == 0 || strcmp(userInput, "mage") == 0 || strcmp(userInput, "hacker") == 0)
+				{
+					RakNet::BitStream bs;
+					bs.Write((RakNet::MessageID)ID_ASSIGN_CLASS);
+					RakNet::RakString playerClass(userInput);
+					bs.Write(playerClass);
+					std::cout << "Choice made! Now wait for the others." << std::endl;
+					(g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, g_serverAddress, false));
+					//g_networkState = NS_Pending;
+					//std::this_thread::sleep_for(std::chrono::minutes(1));
+					doOnce = true;
+				}
+				else {
+					std::cout << "Try again." << std::endl;
+					doOnce = false;
+				}
+			}
+		}
+		else if (g_networkState == NS_GameplayIntro)
+		{
+			std::cout << "Prepare for combat." << std::endl;
+			g_networkState = NS_Gameplay;
+		}
+		else if (g_networkState == NS_Gameplay)
+		{
+			std::cout << "What would you like to do?" << std::endl;
+			std::cout << "Type 'stats' to see the health of all players." << std::endl;
+			std::cout << "If it is your turn, you may type 'attack' or 'heal'." << std::endl;
+			std::cin >> userInput;
+			if (strcmp(userInput, "stats") == 0)
 			{
 				RakNet::BitStream bs;
-				bs.Write((RakNet::MessageID)ID_ASSIGN_CLASS);
+				bs.Write((RakNet::MessageID)ID_SERVERGET_STATS);
 				RakNet::RakString playerClass(userInput);
 				bs.Write(playerClass);
-				std::cout << "Nice choice, now wait for the others." << std::endl;
+				//std::cout << "Choice made! Now wait for the others." << std::endl;
 				(g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, g_serverAddress, false));
-				//g_networkState = NS_Pending;
-
 			}
 			else {
-				std::cout << "Try again." << std::endl;
+				std::cout << "Not a valid input." << std::endl;
 			}
-
 		}
 		std::this_thread::sleep_for(std::chrono::microseconds(100));
 	}
@@ -416,6 +568,20 @@ void PacketHandler()
 				case ID_ASSIGN_CLASS:
 					OnClassSelect(packet);
 					break;
+
+				case ID_CLASS_PICKED:
+					DisplayClassesPicked(packet);
+					break;
+
+				case ID_GAME_START:
+					TimeToPlay(packet);
+					break;
+
+				case ID_SERVERGET_STATS:
+					DisplayStats(packet);
+
+				case ID_CLIENT_READ_STATS:
+					ClientReadStats(packet);
 
 				default:
 					break;
