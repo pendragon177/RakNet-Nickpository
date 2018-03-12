@@ -22,6 +22,8 @@ enum NetworkState
 	NS_PickClass,
 	NS_GameplayIntro,
 	NS_Gameplay,
+	NS_Dead,
+	NS_GameOver,
 };
 
 bool isServer = false;
@@ -30,6 +32,11 @@ bool isRunning = true;
 int playersReady = 0;
 int whosTurn = 0;
 int statPart = 0;
+int attPart = 0;
+int healPart = 0;
+int livingPlayers = 3;
+
+bool goingFirst = true;
 
 RakNet::RakPeerInterface *g_rakPeerInterface = nullptr;
 RakNet::SystemAddress g_serverAddress;
@@ -46,6 +53,16 @@ enum {
 	ID_GAME_START,
 	ID_SERVERGET_STATS,
 	ID_CLIENT_READ_STATS,
+	ID_ATTACK_TARGET,
+	ID_TELL_CLIENT_OF_ATTACK,
+	ID_INEED_HEALING,
+	ID_TELL_CLIENT_OF_HEAL,
+	ID_WHOS_ON_FIRST,
+	ID_NOT_YOUR_TURN,
+	ID_INFORM_NEXT_OF_KIN,
+	ID_SEND_TO_GRAVEYARD,
+	ID_GAME_OVER,
+	ID_WINNER,
 };
 
 enum ePlayerClass
@@ -61,9 +78,9 @@ struct SPlayer
 	std::string name;
 	std::string classString;
 	RakNet::SystemAddress address;
-	unsigned int m_health;
-	unsigned int m_attack;
-	unsigned int m_heal;
+	int m_health;
+	int m_attack;
+	int m_heal;
 	ePlayerClass m_class;
 
 	unsigned int turnPosition;
@@ -168,7 +185,7 @@ void OnLobbyReady(RakNet::Packet* packet)
 	assert(g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true));
 
 	playersReady += 1;
-	if (playersReady == 2)//testing
+	if (playersReady == 3)//testing
 	{
 		NetworkState ns = NS_PickClass;
 		RakNet::BitStream bs;
@@ -253,7 +270,7 @@ void OnClassSelect(RakNet::Packet* packet)
 	assert(g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true));
 
 	playersReady += 1;
-	if (playersReady == 2)//testing #2
+	if (playersReady == 3)//testing #2
 	{
 		NetworkState ns = NS_GameplayIntro;
 		RakNet::BitStream bs;
@@ -277,6 +294,7 @@ void DisplayClassesPicked(RakNet::Packet*packet)
 	bs.Read(userName);
 
 	std::cout << userName.C_String() << " has picked their class." << std::endl;
+	
 }
 
 //changing CLIENT state
@@ -305,11 +323,12 @@ void DisplayStats(RakNet::Packet* packet)
 		}*/
 		SPlayer& player = it->second;
 		//player.name = userName;
-
+		/*
 		std::cout << "Player Name: "<< player.name.c_str() << std::endl;
 		std::cout << "Player Class: " << player.classString.c_str() << std::endl;
-		std::cout << "Current Health: " << player.m_health << std::endl;
+		std::cout << "Current Health: " << player.m_health << std::endl;*/
 		std::string hp = std::to_string(player.m_health);
+		std::string turn = std::to_string(player.turnPosition);
 
 		RakNet::BitStream writeBs;
 		writeBs.Write((RakNet::MessageID)ID_CLIENT_READ_STATS);
@@ -328,6 +347,12 @@ void DisplayStats(RakNet::Packet* packet)
 		RakNet::RakString playerStats3(hp.c_str());
 		writeBs3.Write(playerStats3);
 		g_rakPeerInterface->Send(&writeBs3, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+
+		RakNet::BitStream writeBs4;
+		writeBs4.Write((RakNet::MessageID)ID_CLIENT_READ_STATS);
+		RakNet::RakString playerStats4(turn.c_str());
+		writeBs4.Write(playerStats4);
+		g_rakPeerInterface->Send(&writeBs4, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
 	}
 }
 
@@ -351,10 +376,387 @@ void ClientReadStats(RakNet::Packet* packet)
 	else if (statPart == 3)
 	{
 		std::cout << "Player Health: " << stat.C_String() << std::endl;
+	}
+	else if (statPart == 4)
+	{
+		std::cout << "Player Turn Order: " << stat.C_String() <<" [1 or 0 means it's their turn, unless they are dead.]"<< std::endl;
 		statPart = 0;
 	}
 	
 }
+
+//server side combat numbers
+void AttackADude(RakNet::Packet* packet)
+{
+	unsigned long guid = RakNet::RakNetGUID::ToUint32(packet->guid);
+	std::map<unsigned long, SPlayer>::iterator it = m_players.find(guid);
+
+	bool doneOnce = false;
+	int noName = 0;
+
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString target;
+	bs.Read(target);
+	int attackPow = it->second.m_attack;
+	if (it->second.turnPosition <= 1 && it->second.m_health > 0) {
+
+		for (std::map<unsigned long, SPlayer>::iterator it = m_players.begin(); it != m_players.end(); ++it)
+		{
+			if (guid == it->first)
+			{
+				continue;
+			}
+			SPlayer& player = it->second;
+			//std::cout << player.name.c_str() << " was cycled through this loop." << std::endl;
+			player.turnPosition -= 1;
+
+
+
+			if (strcmp(target, player.name.c_str()) == 0 && player.m_health > 0)
+			{
+				noName += 4;
+				player.m_health = player.m_health - attackPow;
+				std::cout << player.name.c_str() << " was attacked for " << std::to_string(attackPow) << " dammage. They now have " << std::to_string(player.m_health) << " health." << std::endl;
+				
+				std::string attPow = std::to_string(attackPow);
+				std::string hp = std::to_string(player.m_health);
+
+				RakNet::BitStream writeBs;
+				writeBs.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_ATTACK);
+				RakNet::RakString playerStats(player.name.c_str());
+				writeBs.Write(playerStats);
+				g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+
+				RakNet::BitStream writeBs2;
+				writeBs2.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_ATTACK);
+				RakNet::RakString playerStats2(attPow.c_str());
+				writeBs2.Write(playerStats2);
+				g_rakPeerInterface->Send(&writeBs2, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+
+				RakNet::BitStream writeBs3;
+				writeBs3.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_ATTACK);
+				RakNet::RakString playerStats3(hp.c_str());
+				writeBs3.Write(playerStats3);
+				g_rakPeerInterface->Send(&writeBs3, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+
+				if (player.m_health <= 0)
+				{
+					livingPlayers -= 1;
+					RakNet::BitStream writeBs4;
+					writeBs4.Write((RakNet::MessageID)ID_INFORM_NEXT_OF_KIN);
+					RakNet::RakString playerStats(player.name.c_str());
+					writeBs4.Write(playerStats);
+					g_rakPeerInterface->Send(&writeBs4, HIGH_PRIORITY, RELIABLE_ORDERED, 0, player.address, true);
+
+					NetworkState ns = NS_Dead;
+					RakNet::BitStream writeBs5;
+					writeBs5.Write((RakNet::MessageID)ID_SEND_TO_GRAVEYARD);
+					writeBs5.Write(ns);
+					g_rakPeerInterface->Send(&writeBs5, HIGH_PRIORITY, RELIABLE_ORDERED, 0, player.address, false);
+
+					for (std::map<unsigned long, SPlayer>::iterator it = m_players.begin(); it != m_players.end(); ++it)
+					{
+						
+						SPlayer& player = it->second;
+						//std::cout << player.name.c_str() << " was cycled through the dead loop." << std::endl;
+						player.turnPosition -= 1;
+					}
+				}
+
+				if (doneOnce == false) 
+				{
+					doneOnce = true;
+
+					RakNet::BitStream writeBs;
+					writeBs.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_ATTACK);
+					RakNet::RakString playerStats(player.name.c_str());
+					writeBs.Write(playerStats);
+					g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true);
+
+					RakNet::BitStream writeBs2;
+					writeBs2.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_ATTACK);
+					RakNet::RakString playerStats2(attPow.c_str());
+					writeBs2.Write(playerStats2);
+					g_rakPeerInterface->Send(&writeBs2, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true);
+
+					RakNet::BitStream writeBs3;
+					writeBs3.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_ATTACK);
+					RakNet::RakString playerStats3(hp.c_str());
+					writeBs3.Write(playerStats3);
+					g_rakPeerInterface->Send(&writeBs3, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true);
+				}
+			}
+			else
+			{
+				std::cout << "Not the right target or they're already dead." << std::endl;
+				
+					//SPlayer& player = it->second;
+				noName += 1;
+			}
+
+		}
+		if (noName == 2)
+		{
+			RakNet::BitStream writeBs;
+			writeBs.Write((RakNet::MessageID)ID_WHOS_ON_FIRST);
+			RakNet::RakString playerStats(it->second.name.c_str());
+			writeBs.Write(playerStats);
+			g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true);
+
+			RakNet::BitStream writeBs2;
+			writeBs2.Write((RakNet::MessageID)ID_WHOS_ON_FIRST);
+			RakNet::RakString playerStats2(it->second.name.c_str());
+			writeBs2.Write(playerStats2);
+			g_rakPeerInterface->Send(&writeBs2, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+		}
+		it->second.turnPosition = livingPlayers;
+		if (livingPlayers == 1)
+		{
+			SPlayer& player = it->second;
+			NetworkState ns = NS_PickClass;
+			RakNet::BitStream bs;
+			bs.Write((RakNet::MessageID)ID_GAME_OVER);
+			bs.Write(ns);
+
+			g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, g_serverAddress, true);
+
+			RakNet::BitStream writeBs;
+			writeBs.Write((RakNet::MessageID)ID_WINNER);
+			RakNet::RakString name(player.name.c_str());
+			writeBs.Write(name);
+
+			//returns 0 when something is wrong												RakNet::UNASSIGNED_SYSTEM_ADDRESS
+			g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+
+			RakNet::BitStream writeBs2;
+			writeBs2.Write((RakNet::MessageID)ID_WINNER);
+			RakNet::RakString name2(player.name.c_str());
+			writeBs2.Write(name2);
+			g_rakPeerInterface->Send(&writeBs2, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true);
+		}
+	}
+	else
+	{
+		std::cout << "It's not your turn yet or you are dead." << std::endl;
+
+		RakNet::BitStream writeBs;
+		writeBs.Write((RakNet::MessageID)ID_NOT_YOUR_TURN);
+		RakNet::RakString playerStats("word");
+		writeBs.Write(playerStats);
+		g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+	}
+}
+
+//to client
+void ClientReadAttack(RakNet::Packet* packet)
+{
+	attPart++;
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString stat;
+	bs.Read(stat);
+	if (attPart == 1)
+	{
+		std::cout << stat.C_String() << " was attacked."<< std::endl;
+	}
+	else if (attPart == 2)
+	{
+		std::cout << "They took " << stat.C_String() << " damage."<< std::endl;
+	}
+	else if (attPart == 3)
+	{
+		std::cout << "They now have " << stat.C_String() << " health."<< std::endl;
+		attPart = 0;
+	}
+}
+
+
+//server
+void HealYoSelf(RakNet::Packet* packet)
+{
+	unsigned long guid = RakNet::RakNetGUID::ToUint32(packet->guid);
+	std::map<unsigned long, SPlayer>::iterator it = m_players.find(guid);
+
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString target;
+	bs.Read(target);
+	int healstr = it->second.m_heal;
+
+
+	if (it->second.turnPosition <= 1 && it->second.m_health > 0)
+	{
+		SPlayer& player = it->second;
+		it->second.m_health = it->second.m_health + it->second.m_heal;
+
+		bool doneOnce = false;
+		std::string attPow = std::to_string(healstr);
+		std::string hp = std::to_string(player.m_health);
+
+		for (std::map<unsigned long, SPlayer>::iterator it = m_players.begin(); it != m_players.end(); ++it)
+		{
+			it->second.turnPosition -= 1;
+
+			if (guid == it->first)
+			{
+				RakNet::BitStream writeBs;
+				writeBs.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_HEAL);
+				RakNet::RakString playerStats(player.name.c_str());
+				writeBs.Write(playerStats);
+				g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+
+				RakNet::BitStream writeBs2;
+				writeBs2.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_HEAL);
+				RakNet::RakString playerStats2(attPow.c_str());
+				writeBs2.Write(playerStats2);
+				g_rakPeerInterface->Send(&writeBs2, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+
+				RakNet::BitStream writeBs3;
+				writeBs3.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_HEAL);
+				RakNet::RakString playerStats3(hp.c_str());
+				writeBs3.Write(playerStats3);
+				g_rakPeerInterface->Send(&writeBs3, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+
+				continue;
+			}
+			if (doneOnce == false)
+			{
+				doneOnce = true;
+
+				RakNet::BitStream writeBs;
+				writeBs.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_HEAL);
+				RakNet::RakString playerStats(player.name.c_str());
+				writeBs.Write(playerStats);
+				g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true);
+
+				RakNet::BitStream writeBs2;
+				writeBs2.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_HEAL);
+				RakNet::RakString playerStats2(attPow.c_str());
+				writeBs2.Write(playerStats2);
+				g_rakPeerInterface->Send(&writeBs2, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true);
+
+				RakNet::BitStream writeBs3;
+				writeBs3.Write((RakNet::MessageID)ID_TELL_CLIENT_OF_HEAL);
+				RakNet::RakString playerStats3(hp.c_str());
+				writeBs3.Write(playerStats3);
+				g_rakPeerInterface->Send(&writeBs3, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, true);
+			}
+		}
+		it->second.turnPosition = livingPlayers;
+	}
+	else
+	{
+		std::cout << "It's not your turn yet or you are dead." << std::endl;
+
+		RakNet::BitStream writeBs;
+		writeBs.Write((RakNet::MessageID)ID_NOT_YOUR_TURN);
+		RakNet::RakString playerStats("word");
+		writeBs.Write(playerStats);
+		g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, packet->systemAddress, false);
+	}
+}
+
+//client
+void ClientReadHeal(RakNet::Packet* packet)
+{
+	healPart++;
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString stat;
+	bs.Read(stat);
+	if (healPart == 1)
+	{
+		std::cout << stat.C_String() << " healed themself." << std::endl;
+	}
+	else if (healPart == 2)
+	{
+		std::cout << "They healed " << stat.C_String() << " health." << std::endl;
+	}
+	else if (healPart == 3)
+	{
+		std::cout << "They now have " << stat.C_String() << " health." << std::endl;
+		healPart = 0;
+	}
+}
+
+//client msg
+void ClientNotYourTurn(RakNet::Packet* packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString userName;
+	bs.Read(userName);
+
+	std::cout << "It's not your turn." << std::endl;
+}
+
+void KillNotification(RakNet::Packet* packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString userName;
+	bs.Read(userName);
+
+	std::cout << userName <<" was killed." << std::endl;
+}
+
+void YOUDIED(RakNet::Packet* packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	NetworkState ns;
+	bs.Read(ns);
+	std::cout << "YOU ARE DEAD." << std::endl;
+	g_networkState = ns;
+}
+
+
+void GameOverMsg(RakNet::Packet* packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	NetworkState ns;
+	bs.Read(ns);
+	std::cout << "Game Over" << std::endl;
+
+	g_networkState = ns;
+}
+
+
+void WinnerMsg(RakNet::Packet* packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString userName;
+	bs.Read(userName);
+
+	std::cout << userName.C_String() << " is the winner." << std::endl;
+}
+
+
+void YourTurn(RakNet::Packet* packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString userName;
+	bs.Read(userName);
+
+	std::cout << userName.C_String() << " messed up their attack so it is not their turn any more." << std::endl;
+	std::cout << "Check 'stats' to see the updated turn order." << std::endl;
+}
+
+
 
 
 unsigned char GetPacketIdentifier(RakNet::Packet *packet)
@@ -419,6 +821,7 @@ void InputHandler()
 			if (!doOnce)
 			{
 				std::cout << "Enter 'mage', 'ranger' or 'warrior' to pick your class." << std::endl;
+				std::cout << "Turn order is determined based on who picks first." << std::endl;
 				std::cin >> userInput;
 
 				if (strcmp(userInput, "warrior") == 0 || strcmp(userInput, "ranger") == 0 || strcmp(userInput, "mage") == 0 || strcmp(userInput, "hacker") == 0)
@@ -459,9 +862,41 @@ void InputHandler()
 				//std::cout << "Choice made! Now wait for the others." << std::endl;
 				(g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, g_serverAddress, false));
 			}
+			else if (strcmp(userInput, "attack") == 0)
+			{
+				std::cout << "Type the name of your target. Case sensitive." << std::endl;
+				std::cin >> userInput;
+				RakNet::BitStream bs;
+				bs.Write((RakNet::MessageID)ID_ATTACK_TARGET);
+				RakNet::RakString target(userInput);
+				bs.Write(target);
+				//std::cout << "Choice made! Now wait for the others." << std::endl;
+				(g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, g_serverAddress, false));
+			}
+			else if (strcmp(userInput, "heal") == 0)
+			{
+				RakNet::BitStream bs;
+				bs.Write((RakNet::MessageID)ID_INEED_HEALING);
+				RakNet::RakString playerClass(userInput);
+				bs.Write(playerClass);
+				//std::cout << "Choice made! Now wait for the others." << std::endl;
+				(g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, g_serverAddress, false));
+			}
 			else {
 				std::cout << "Not a valid input." << std::endl;
 			}
+		}
+		else if (g_networkState == NS_Dead)
+		{
+			std::cout << "You are dead. Wait for the game to end." << std::endl;
+			std::this_thread::sleep_for(std::chrono::seconds(6));
+		}
+		else if (g_networkState == NS_GameOver)
+		{
+			static bool doOnce = false;
+			if (!doOnce)
+				std::cout << "Game Over" << std::endl;
+			doOnce = true;
 		}
 		std::this_thread::sleep_for(std::chrono::microseconds(100));
 	}
@@ -579,9 +1014,51 @@ void PacketHandler()
 
 				case ID_SERVERGET_STATS:
 					DisplayStats(packet);
+					break;
 
 				case ID_CLIENT_READ_STATS:
 					ClientReadStats(packet);
+					break;
+
+				case ID_ATTACK_TARGET:
+					AttackADude(packet);
+					break;
+
+				case ID_TELL_CLIENT_OF_ATTACK:
+					ClientReadAttack(packet);
+					break;
+
+				case ID_INEED_HEALING:
+					HealYoSelf(packet);
+					break;
+
+				case ID_TELL_CLIENT_OF_HEAL:
+					ClientReadHeal(packet);
+					break;
+
+				case ID_WHOS_ON_FIRST:
+					YourTurn(packet);
+					break;
+
+				case ID_NOT_YOUR_TURN:
+					ClientNotYourTurn(packet);
+					break;
+
+				case ID_INFORM_NEXT_OF_KIN:
+					KillNotification(packet);
+					break;
+
+				case ID_SEND_TO_GRAVEYARD:
+					YOUDIED(packet);
+					break;
+
+				case ID_GAME_OVER:
+					GameOverMsg(packet);
+					break;
+
+				case ID_WINNER:
+					WinnerMsg(packet);
+					break;
 
 				default:
 					break;
