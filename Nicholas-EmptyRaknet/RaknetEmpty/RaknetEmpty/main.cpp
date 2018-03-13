@@ -276,7 +276,7 @@ void OnClassSelect(RakNet::Packet* packet)
 		RakNet::BitStream bs;
 		bs.Write((RakNet::MessageID)ID_GAME_START);
 		bs.Write(ns);
-		std::cout << "All players chose a class." << std::endl;
+		std::cout << "All players chose a class.\n" << std::endl;
 		g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, g_serverAddress, true);
 		playersReady = 0;
 	}
@@ -379,7 +379,7 @@ void ClientReadStats(RakNet::Packet* packet)
 	}
 	else if (statPart == 4)
 	{
-		std::cout << "Player Turn Order: " << stat.C_String() <<" [1 or 0 means it's their turn, unless they are dead.]"<< std::endl;
+		std::cout << "Player Turn Order: " << stat.C_String() <<" [1 or 0 means it's their turn, unless they are dead.]\n"<< std::endl;
 		statPart = 0;
 	}
 	
@@ -490,7 +490,7 @@ void AttackADude(RakNet::Packet* packet)
 			}
 			else
 			{
-				std::cout << "Not the right target or they're already dead." << std::endl;
+				std::cout << "Not the right target or they're already dead.\n" << std::endl;
 				
 					//SPlayer& player = it->second;
 				noName += 1;
@@ -539,7 +539,7 @@ void AttackADude(RakNet::Packet* packet)
 	}
 	else
 	{
-		std::cout << "It's not your turn yet or you are dead." << std::endl;
+		std::cout << "It's not your turn yet or you are dead.\n" << std::endl;
 
 		RakNet::BitStream writeBs;
 		writeBs.Write((RakNet::MessageID)ID_NOT_YOUR_TURN);
@@ -568,7 +568,7 @@ void ClientReadAttack(RakNet::Packet* packet)
 	}
 	else if (attPart == 3)
 	{
-		std::cout << "They now have " << stat.C_String() << " health."<< std::endl;
+		std::cout << "They now have " << stat.C_String() << " health.\n"<< std::endl;
 		attPart = 0;
 	}
 }
@@ -650,7 +650,7 @@ void HealYoSelf(RakNet::Packet* packet)
 	}
 	else
 	{
-		std::cout << "It's not your turn yet or you are dead." << std::endl;
+		std::cout << "It's not your turn yet or you are dead.\n" << std::endl;
 
 		RakNet::BitStream writeBs;
 		writeBs.Write((RakNet::MessageID)ID_NOT_YOUR_TURN);
@@ -679,7 +679,7 @@ void ClientReadHeal(RakNet::Packet* packet)
 	}
 	else if (healPart == 3)
 	{
-		std::cout << "They now have " << stat.C_String() << " health." << std::endl;
+		std::cout << "They now have " << stat.C_String() << " health.\n" << std::endl;
 		healPart = 0;
 	}
 }
@@ -693,7 +693,7 @@ void ClientNotYourTurn(RakNet::Packet* packet)
 	RakNet::RakString userName;
 	bs.Read(userName);
 
-	std::cout << "It's not your turn." << std::endl;
+	std::cout << "It's not your turn.\n" << std::endl;
 }
 
 void KillNotification(RakNet::Packet* packet)
@@ -704,7 +704,7 @@ void KillNotification(RakNet::Packet* packet)
 	RakNet::RakString userName;
 	bs.Read(userName);
 
-	std::cout << userName <<" was killed." << std::endl;
+	std::cout << userName <<" was killed.\n" << std::endl;
 }
 
 void YOUDIED(RakNet::Packet* packet)
@@ -753,7 +753,7 @@ void YourTurn(RakNet::Packet* packet)
 	bs.Read(userName);
 
 	std::cout << userName.C_String() << " messed up their attack so it is not their turn any more." << std::endl;
-	std::cout << "Check 'stats' to see the updated turn order." << std::endl;
+	std::cout << "Check 'stats' to see the updated turn order.\n" << std::endl;
 }
 
 
@@ -821,7 +821,10 @@ void InputHandler()
 			if (!doOnce)
 			{
 				std::cout << "Enter 'mage', 'ranger' or 'warrior' to pick your class." << std::endl;
-				std::cout << "Turn order is determined based on who picks first." << std::endl;
+				std::cout << "Mage. Health = 6. Attack = 2. Heal = 4. " << std::endl;
+				std::cout << "Ranger. Health = 9. Attack = 3. Heal = 3. " << std::endl;
+				std::cout << "Warrior. Health = 12. Attack = 1. Heal = 2. " << std::endl;
+				std::cout << "Turn order is determined based on who picks first.\n" << std::endl;
 				std::cin >> userInput;
 
 				if (strcmp(userInput, "warrior") == 0 || strcmp(userInput, "ranger") == 0 || strcmp(userInput, "mage") == 0 || strcmp(userInput, "hacker") == 0)
@@ -830,7 +833,7 @@ void InputHandler()
 					bs.Write((RakNet::MessageID)ID_ASSIGN_CLASS);
 					RakNet::RakString playerClass(userInput);
 					bs.Write(playerClass);
-					std::cout << "Choice made! Now wait for the others." << std::endl;
+					std::cout << "Choice made! Now wait for the others.\n" << std::endl;
 					(g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, g_serverAddress, false));
 					//g_networkState = NS_Pending;
 					//std::this_thread::sleep_for(std::chrono::minutes(1));
@@ -844,14 +847,14 @@ void InputHandler()
 		}
 		else if (g_networkState == NS_GameplayIntro)
 		{
-			std::cout << "Prepare for combat." << std::endl;
+			std::cout << "Prepare for combat.\n" << std::endl;
 			g_networkState = NS_Gameplay;
 		}
 		else if (g_networkState == NS_Gameplay)
 		{
 			std::cout << "What would you like to do?" << std::endl;
 			std::cout << "Type 'stats' to see the health of all players." << std::endl;
-			std::cout << "If it is your turn, you may type 'attack' or 'heal'." << std::endl;
+			std::cout << "If it is your turn, you may type 'attack' or 'heal'.\n" << std::endl;
 			std::cin >> userInput;
 			if (strcmp(userInput, "stats") == 0)
 			{
@@ -883,7 +886,7 @@ void InputHandler()
 				(g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, g_serverAddress, false));
 			}
 			else {
-				std::cout << "Not a valid input." << std::endl;
+				std::cout << "Not a valid input.\n" << std::endl;
 			}
 		}
 		else if (g_networkState == NS_Dead)
@@ -1107,7 +1110,7 @@ int main()
 				g_rakPeerInterface->SetOccasionalPing(true);
 				//client connection
 				//127.0.0.1 or 10.4.89.157 or 192.168.0.31
-				RakNet::ConnectionAttemptResult car = g_rakPeerInterface->Connect("192.168.2.47", SERVER_PORT, nullptr, 0);
+				RakNet::ConnectionAttemptResult car = g_rakPeerInterface->Connect("10.4.89.105", SERVER_PORT, nullptr, 0);
 				RakAssert(car == RakNet::CONNECTION_ATTEMPT_STARTED);
 				std::cout << "Client attempted connection" << std::endl;
 				g_networkState = NS_Started;
